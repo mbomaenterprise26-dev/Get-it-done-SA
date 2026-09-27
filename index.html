@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GetItDone SA</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GetItDone">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body{background:#0f1115;color:#f2f3f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}
+  .card{background:#171a21;border:1px solid #2a2f3a;border-radius:14px;}
+  .btn-gold{background:linear-gradient(135deg,#d4a94a,#e8c473);color:#1a1408;font-weight:700;}
+  input,select,textarea{background:#1e2229;border:1px solid #2a2f3a;color:#f2f3f5;}
+  .tab-active{color:#d4a94a;border-bottom:2px solid #d4a94a;} .tab{color:#9aa1ad;border-bottom:2px solid transparent;}
+</style>
+</head>
+<body>
+<div id="app" class="max-w-5xl mx-auto px-4 pb-24"></div>
+<script>
+const API = '';
+let token = localStorage.getItem('gid_token') || null;
+let user = JSON.parse(localStorage.getItem('gid_user') || 'null');
+let view = 'browse';
+let tasks = [];
+
+function esc(s){ return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function zar(n){ return 'R'+Number(n).toFixed(2); }
+
+async function api(path, opts={}){
+  const headers = {'Content-Type':'application/json', ...(opts.headers||{})};
+  if (token) headers.Authorization = 'Bearer '+token;
+  const res = await fetch(API+path, {...opts, headers});
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok) throw new Error(data.error || 'Something went wrong');
+  return data;
+}
+
+function setView(v){ view=v; render(); }
+
+function header(){
+  return `
+  <div class="pt-6 pb-4 flex items-center justify-between">
+    <div>
+      <div class="text-2xl font-extrabold" style="color:#d4a94a">GetItDone <span class="text-white">SA</span></div>
+      <div class="text-xs text-gray-400">Get help. Get paid. Get it done.</div>
+    </div>
+    <div class="flex items-center gap-3">
+      <button id="install-btn" onclick="installApp()" class="hidden btn-gold text-xs px-3 py-1.5 rounded-lg">Install App</button>
+      <div class="text-sm text-gray-300">${user? 'Hi, '+esc(user.name) : ''}</div>
+    </div>
+  </div>
+  <div class="flex gap-5 border-b border-gray-700 overflow-x-auto">
+    ${[['browse','Browse'],['post','Post a Task'],['account', user?'Account':'Sign up / Login']]
+      .map(([k,l])=>`<button onclick="setView('${k}')" class="pb-3 px-1 text-sm font-semibold whitespace-nowrap ${view===k?'tab-active':'tab'}">${l}</button>`).join('')}
+  </div>`;
+}
+
+async function loadTasks(){ tasks = await api('/api/tasks'); }
+
+function taskCard(t){
+  return `<div class="card p-4 flex flex-col gap-2">
+    <div class="flex justify-between gap-2"><div class="font-semibold">${esc(t.title)}</div><div class="font-bold" style="color:#d4a94a">${zar(t.budget)}</div></div>
+    <div class="text-xs text-gray-400">${esc(t.category)} · ${esc(t.city)}, ${esc(t.province)}</div>
+    <div class="text-sm text-gray-400">${esc(t.description)}</div>
+    <button onclick="connect(${t.id})" class="btn-gold text-xs px-3 py-1.5 rounded-lg self-end">Connect · R25</button>
+  </div>`;
+}
+
+async function connect(taskId){
+  if (!user){ alert('Please sign up or log in first.'); setView('account'); return; }
+  try{
+    const {redirectUrl} = await api(`/api/tasks/${taskId}/connect`, {method:'POST'});
+    window.location.href = redirectUrl; // sends the helper to PayFast to pay
+  }catch(e){ alert(e.message); }
+}
+
+function browseView(){
+  return `<div class="py-5"><div class="text-sm text-gray-400 mb-3">${tasks.length} tasks available</div>
+  <div class="grid sm:grid-cols-2 gap-3">${tasks.map(taskCard).join('') || '<div class="text-gray-400 text-sm">No tasks yet.</div>'}</div></div>`;
+}
+
+function postView(){
+  if (!user) return `<div class="py-10 text-center text-gray-400">Please <button onclick="setView('account')" class="underline">sign up or log in</button> to post a task.</div>`;
+  return `<div class="py-5 max-w-lg"><div class="card p-5 flex flex-col gap-3">
+    <div class="font-semibold text-lg">Post a task</div>
+    <input id="pt_title" placeholder="What do you need help with?" class="rounded-lg px-3 py-2 text-sm">
+    <input id="pt_cat" placeholder="Category (e.g. Errands, Part-time Job)" class="rounded-lg px-3 py-2 text-sm">
+    <div class="grid grid-cols-2 gap-2">
+      <input id="pt_city" placeholder="City" class="rounded-lg px-3 py-2 text-sm">
+      <input id="pt_prov" placeholder="Province" class="rounded-lg px-3 py-2 text-sm">
+    </div>
+    <input id="pt_budget" type="number" placeholder="Budget (ZAR)" class="rounded-lg px-3 py-2 text-sm">
+    <textarea id="pt_desc" rows="3" placeholder="Details" class="rounded-lg px-3 py-2 text-sm"></textarea>
+    <input id="pt_contact" placeholder="Your contact (phone/WhatsApp)" class="rounded-lg px-3 py-2 text-sm">
+    <button onclick="submitTask()" class="btn-gold rounded-lg py-2 text-sm">Post task</button>
+  </div></div>`;
+}
+
+async function submitTask(){
+  try{
+    await api('/api/tasks', {method:'POST', body: JSON.stringify({
+      title: pt_title.value, category: pt_cat.value, city: pt_city.value, province: pt_prov.value,
+      budget: pt_budget.value, description: pt_desc.value, contact: pt_contact.value
+    })});
+    await loadTasks(); setView('browse');
+  }catch(e){ alert(e.message); }
+}
+
+function accountView(){
+  if (user) return `<div class="py-10 max-w-xs">
+    <div class="card p-5"><div class="font-semibold mb-2">${esc(user.name)}</div>
+    <button onclick="logout()" class="text-sm text-gray-400 underline">Log out</button></div></div>`;
+  return `<div class="py-8 max-w-sm">
+    <div class="card p-5 flex flex-col gap-3">
+      <div class="font-semibold text-lg">Sign up</div>
+      <input id="r_name" placeholder="Full name" class="rounded-lg px-3 py-2 text-sm">
+      <input id="r_phone" placeholder="Phone" class="rounded-lg px-3 py-2 text-sm">
+      <input id="r_email" placeholder="Email" class="rounded-lg px-3 py-2 text-sm">
+      <input id="r_password" type="password" placeholder="Password" class="rounded-lg px-3 py-2 text-sm">
+      <button onclick="register()" class="btn-gold rounded-lg py-2 text-sm">Create account</button>
+    </div>
+    <div class="text-center text-xs text-gray-500 my-3">— or —</div>
+    <div class="card p-5 flex flex-col gap-3">
+      <div class="font-semibold text-lg">Log in</div>
+      <input id="l_email" placeholder="Email" class="rounded-lg px-3 py-2 text-sm">
+      <input id="l_password" type="password" placeholder="Password" class="rounded-lg px-3 py-2 text-sm">
+      <button onclick="login()" class="rounded-lg py-2 text-sm border border-gray-600">Log in</button>
+    </div>
+  </div>`;
+}
+
+async function register(){
+  try{
+    const data = await api('/api/auth/register', {method:'POST', body: JSON.stringify({
+      name:r_name.value, phone:r_phone.value, email:r_email.value, password:r_password.value
+    })});
+    token=data.token; user=data.user;
+    localStorage.setItem('gid_token', token); localStorage.setItem('gid_user', JSON.stringify(user));
+    setView('browse');
+  }catch(e){ alert(e.message); }
+}
+async function login(){
+  try{
+    const data = await api('/api/auth/login', {method:'POST', body: JSON.stringify({email:l_email.value, password:l_password.value})});
+    token=data.token; user=data.user;
+    localStorage.setItem('gid_token', token); localStorage.setItem('gid_user', JSON.stringify(user));
+    setView('browse');
+  }catch(e){ alert(e.message); }
+}
+function logout(){ token=null; user=null; localStorage.removeItem('gid_token'); localStorage.removeItem('gid_user'); setView('browse'); }
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(()=>{}));
+}
+
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  const btn = document.getElementById('install-btn');
+  if (btn) btn.classList.remove('hidden');
+});
+function installApp(){
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  deferredInstallPrompt = null;
+  document.getElementById('install-btn')?.classList.add('hidden');
+}
+
+async function render(){
+  const app = document.getElementById('app');
+  let body = '<div class="py-10 text-center text-gray-400">Loading…</div>';
+  app.innerHTML = header() + body;
+  if (view==='browse'){ await loadTasks(); body = browseView(); }
+  else if (view==='post') body = postView();
+  else if (view==='account') body = accountView();
+  app.innerHTML = header() + body;
+}
+render();
+</script>
+</body>
+</html>
